@@ -1,7 +1,6 @@
 #include "qmlavhwoutput_vaapi_glx.h"
 
 #if defined(__linux__) && !defined(__ANDROID__)
-#include <QVariant>
 #include <va/va_x11.h>
 
 extern "C" {
