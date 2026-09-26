@@ -47,10 +47,8 @@ QVideoFrameFormat::PixelFormat QmlAVVideoFrameFactory::mapPixelFormat(const QmlA
         return QVideoFrameFormat::Format_ABGR8888;
     case AV_PIX_FMT_P010LE:
         return QVideoFrameFormat::Format_P010;
-    case AV_PIX_FMT_Y8:
     case AV_PIX_FMT_GRAY8:
         return QVideoFrameFormat::Format_Y8;
-    case AV_PIX_FMT_Y16LE:
     case AV_PIX_FMT_GRAY16LE:
         return QVideoFrameFormat::Format_Y16;
     default:
@@ -96,7 +94,7 @@ AVFramePtr QmlAVVideoFrameFactory::transferFromGPU(const QmlAVVideoFrame &videoF
             av_frame_copy_props(avFrameSw, videoFrame.avFrame().get());
             return avFrameSw;
         } else {
-            logCritical() << QString("Failed to transfer data from GPU: \"%1\" (%2)")
+            qCritical() << QString("Failed to transfer data from GPU: \"%1\" (%2)")
                             .arg(av_err2str(ret)).arg(ret);
         }
     }
@@ -108,7 +106,7 @@ void QmlAVVideoFrameFactory::copyPlaneData(QVideoFrame &frame, const AVFrame *av
                                             const QVideoFrameFormat::PixelFormat &format)
 {
     if (!frame.map(QVideoFrame::WriteOnly)) {
-        logCritical() << "Failed to map QVideoFrame for writing";
+        qCritical() << "Failed to map QVideoFrame for writing";
         return;
     }
     

@@ -23,7 +23,7 @@ public:
 
     Type type() const override { return TypeVAAPI_EGL; }
     QmlAVPixelFormat pixelFormat() const override { return AV_PIX_FMT_BGR32; }
-    QAbstractVideoBuffer::HandleType handleType() const override { return QAbstractVideoBuffer::GLTextureHandle; }
+    HandleType handleType() const override { return GLTextureHandle; }
     QVariant handle(const QmlAVVideoFrame &videoFrame) override;
 
 private:

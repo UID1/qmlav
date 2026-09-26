@@ -188,7 +188,7 @@ void QmlAVPlayer::frameHandler(const std::shared_ptr<QmlAVFrame> frame)
     }
 }
 
-void QmlAVPlayer::setAVOptions(QVariantMap avOptions)
+void QmlAVPlayer::setAVOptions(QmlAVPropertyType<QVariantMap> avOptions)
 {
     if (m_avOptions == avOptions) {
         return;

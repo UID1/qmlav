@@ -14,6 +14,15 @@ public:
         TypeVAAPI_EGL
     };
 
+    // Qt6: QAbstractVideoBuffer::HandleType no longer exists
+    // Define our own handle type enum for hardware output
+    enum HandleType
+    {
+        NoHandle,
+        GLTextureHandle,
+        // Add more as needed
+    };
+
     struct Contract
     {
         int width = 0;
@@ -46,7 +55,7 @@ public:
 
     virtual Type type() const = 0;
     virtual QmlAVPixelFormat pixelFormat() const = 0;
-    virtual QAbstractVideoBuffer::HandleType handleType() const = 0;
+    virtual HandleType handleType() const = 0;
     virtual QVariant handle(const QmlAVVideoFrame &videoFrame) = 0;
 
 protected:
