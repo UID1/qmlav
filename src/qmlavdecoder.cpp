@@ -10,9 +10,21 @@ extern "C" {
 #include <libavutil/hwcontext.h>
 }
 
+// Packet queue limit
 #define PACKETS_LIMIT 64
-#define VIDEO_FRAMES_LIMIT 8
-#define AUDIO_FRAMES_LIMIT 32
+
+// Frame queue limits - tiered approach to prevent memory leaks
+// Soft limit: EMA-based, allows temporary spikes (existing behavior)
+#define VIDEO_FRAMES_SOFT_LIMIT 8
+#define AUDIO_FRAMES_SOFT_LIMIT 32
+
+// Hard limit: Absolute cap, forces immediate frame drop
+#define VIDEO_FRAMES_HARD_LIMIT 16
+#define AUDIO_FRAMES_HARD_LIMIT 64
+
+// Critical limit: Triggers warning, indicates something is wrong
+#define VIDEO_FRAMES_CRITICAL_LIMIT 32
+#define AUDIO_FRAMES_CRITICAL_LIMIT 128
 
 QmlAVDecoder::QmlAVDecoder(QmlAVMediaContextHolder *context, Type type)
     : m_avCodecCtx(nullptr)
@@ -121,8 +133,24 @@ QmlAVLoopController QmlAVDecoder::worker(const AVPacketPtr &avPacket)
 
         return QmlAVLoopController::Continue;
     } else {
-        if (m_frameQueueLimit.addValue(frameQueueLength())) {
+        int currentQueueLength = frameQueueLength();
+        int hardLimit = (m_type == TypeVideo) ? VIDEO_FRAMES_HARD_LIMIT : AUDIO_FRAMES_HARD_LIMIT;
+        int criticalLimit = (m_type == TypeVideo) ? VIDEO_FRAMES_CRITICAL_LIMIT : AUDIO_FRAMES_CRITICAL_LIMIT;
 
+        // Critical limit check - something is seriously wrong
+        if (currentQueueLength >= criticalLimit) {
+            m_counters.framesDiscarded++;
+            logWarning() << QString("CRITICAL: %1 frame queue at %2 (limit: %3) - dropping frame to prevent memory exhaustion")
+                            .arg(typeName()).arg(currentQueueLength).arg(criticalLimit);
+        }
+        // Hard limit check - absolute cap to prevent memory leaks
+        else if (currentQueueLength >= hardLimit) {
+            m_counters.framesDiscarded++;
+            logDebug() << QString("Hard limit: %1 frame queue at %2 (limit: %3) - dropping frame")
+                          .arg(typeName()).arg(currentQueueLength).arg(hardLimit);
+        }
+        // Soft limit check - EMA-based, allows temporary spikes
+        else if (m_frameQueueLimit.addValue(currentQueueLength)) {
             auto f = makeFrame(avFrame, m_context->shared_from_this());
             if (f && f->isValid()) {
                 m_counters.framesDecoded++;
@@ -136,7 +164,7 @@ QmlAVLoopController QmlAVDecoder::worker(const AVPacketPtr &avPacket)
             }
         } else {
             m_counters.framesDiscarded++;
-            logDebug() << QString("Exceeding %1 frame queue limit: ").arg(typeName()) << m_frameQueueLimit;
+            logDebug() << QString("Soft limit: Exceeding %1 frame queue limit: ").arg(typeName()) << m_frameQueueLimit;
         }
     }
 
@@ -146,7 +174,7 @@ QmlAVLoopController QmlAVDecoder::worker(const AVPacketPtr &avPacket)
 QmlAVVideoDecoder::QmlAVVideoDecoder(QmlAVMediaContextHolder *context)
     : QmlAVDecoder(context, TypeVideo)
 {   
-    m_frameQueueLimit.setLimit(VIDEO_FRAMES_LIMIT);
+    m_frameQueueLimit.setLimit(VIDEO_FRAMES_SOFT_LIMIT);
 }
 
 QmlAVVideoDecoder::~QmlAVVideoDecoder()
@@ -234,7 +262,7 @@ const std::shared_ptr<QmlAVFrame> QmlAVVideoDecoder::makeFrame(const AVFramePtr 
 QmlAVAudioDecoder::QmlAVAudioDecoder(QmlAVMediaContextHolder *context)
     : QmlAVDecoder(context, TypeAudio)
 {
-    m_frameQueueLimit.setLimit(AUDIO_FRAMES_LIMIT);
+    m_frameQueueLimit.setLimit(AUDIO_FRAMES_SOFT_LIMIT);
 }
 
 const std::shared_ptr<QmlAVFrame> QmlAVAudioDecoder::makeFrame(const AVFramePtr &avFrame, const std::shared_ptr<QmlAVMediaContextHolder> &context) const

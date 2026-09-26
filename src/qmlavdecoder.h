@@ -5,8 +5,8 @@ extern "C" {
 #include <libavutil/time.h>
 }
 
-#include <QVideoSurfaceFormat>
-#include <QAudioOutput>
+#include <QVideoFrameFormat>
+#include <QAudioSink>
 
 #include "qmlavthread.h"
 #include "qmlavresampler.h"

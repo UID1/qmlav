@@ -129,16 +129,15 @@ QmlAVColorSpace QmlAVVideoFrame::colorSpace() const
 
 QmlAVVideoFrame::operator QVideoFrame() const
 {
-    QmlAVVideoBuffer *buffer;
-
     if (isValid())  {
+        // Qt6: Use the factory to create QVideoFrame directly
         if (isHWDecoded()) {
-            buffer = new QmlAVVideoBuffer_GPU(*this, decoder<QmlAVVideoDecoder>()->hwOutput());
+            QmlAVVideoBuffer_GPU buffer(*this, decoder<QmlAVVideoDecoder>()->hwOutput());
+            return buffer.toVideoFrame();
         } else {
-            buffer = new QmlAVVideoBuffer_CPU(*this);
+            QmlAVVideoBuffer_CPU buffer(*this);
+            return buffer.toVideoFrame();
         }
-
-        return QVideoFrame(buffer, {avFrame()->width, avFrame()->height}, buffer->pixelFormat());
     } else {
         return QVideoFrame();
     }
@@ -208,10 +207,8 @@ QAudioFormat QmlAVAudioFrame::audioFormat() const
 
         format.setSampleRate(sampleRate());
         format.setChannelCount(channelCount());
-        format.setCodec("audio/pcm");
-        format.setByteOrder(AV_NE(QAudioFormat::BigEndian, QAudioFormat::LittleEndian));
-        format.setSampleType(QmlAVSampleFormat::audioFormatFromAVFormat(outSampleFormat));
-        format.setSampleSize(av_get_bytes_per_sample(outSampleFormat) * 8);
+        // Qt6: Use setSampleFormat instead of setSampleType/setSampleSize/setCodec
+        format.setSampleFormat(QmlAVSampleFormat::audioFormatFromAVFormat(outSampleFormat));
     }
 
     return  format;

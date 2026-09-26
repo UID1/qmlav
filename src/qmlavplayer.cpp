@@ -3,12 +3,10 @@
 QmlAVPlayer::QmlAVPlayer(QObject *parent)
     : QObject(parent)
     , m_complete(false)
+    , m_multiSinkMode(false)
     , m_demuxer(nullptr)
-    , m_videoSurface(nullptr)
-    , m_audioOutput(nullptr)
+    , m_audioSink(nullptr)
 {
-    qRegisterMetaType<QList<QVideoFrame::PixelFormat>>();
-
     m_playTimer.setSingleShot(true);
     connect(&m_playTimer, &QTimer::timeout, this, &QmlAVPlayer::play);
 }
@@ -48,14 +46,14 @@ void QmlAVPlayer::stop()
         m_demuxer = nullptr;
     }
 
-    if (m_videoSurface && m_videoSurface->isActive()) {
-        m_videoSurface->stop();
-    }
+    // Qt6: No need to stop sinks, just clear the list
+    m_videoSinks.clear();
+    m_lastVideoFormat = QVideoFrameFormat();  // Clear cached format
 
-    if (m_audioOutput) {
-        m_audioOutput->stop();
-        delete m_audioOutput;
-        m_audioOutput = nullptr;
+    if (m_audioSink) {
+        m_audioSink->stop();
+        delete m_audioSink;
+        m_audioSink = nullptr;
     }
 
     m_audioIODevice.clear();
@@ -65,13 +63,75 @@ void QmlAVPlayer::stop()
     setHasAudio(false);
 }
 
-void QmlAVPlayer::setVideoSurface(QAbstractVideoSurface *surface)
+void QmlAVPlayer::setVideoSink(QVideoSink *sink)
 {
-    if (m_videoSurface != surface) {
-        stop();
+    if (m_multiSinkMode) {
+        // In multi-sink mode, setVideoSink adds to the list
+        addVideoSink(sink);
+        return;
     }
+    
+    // Replace all sinks with just this one
+    if (m_videoSinks.count() == 1 && m_videoSinks.first() == sink) {
+        return;  // No change
+    }
+    
+    m_videoSinks.clear();
+    
+    if (sink) {
+        m_videoSinks.append(sink);
+    }
+    
+    emit videoSinkChanged();
+    emit videoSinkCountChanged();
+}
 
-    m_videoSurface = surface;
+void QmlAVPlayer::setMultiSinkMode(bool mode)
+{
+    if (m_multiSinkMode == mode) {
+        return;
+    }
+    
+    logDebug() << "setMultiSinkMode(" << mode << ")";
+    m_multiSinkMode = mode;
+    emit multiSinkModeChanged();
+}
+
+void QmlAVPlayer::addVideoSink(QVideoSink *sink)
+{
+    if (!sink || m_videoSinks.contains(sink)) {
+        return;
+    }
+    
+    logDebug() << "addVideoSink() - adding sink, total will be:" << (m_videoSinks.count() + 1);
+    
+    m_videoSinks.append(sink);
+    
+    // Auto-remove sink when it's destroyed
+    connect(sink, &QObject::destroyed, this, [this, sink]() {
+        logDebug() << "Sink destroyed, auto-removing from list";
+        m_videoSinks.removeAll(sink);
+        emit videoSinkCountChanged();
+    });
+    
+    emit videoSinkCountChanged();
+}
+
+void QmlAVPlayer::removeVideoSink(QVideoSink *sink)
+{
+    if (!sink) {
+        return;
+    }
+    
+    int index = m_videoSinks.indexOf(sink);
+    if (index < 0) {
+        return;
+    }
+    
+    logDebug() << "removeVideoSink() - removing sink, total will be:" << (m_videoSinks.count() - 1);
+    
+    m_videoSinks.removeAt(index);
+    emit videoSinkCountChanged();
 }
 
 void QmlAVPlayer::frameHandler(const std::shared_ptr<QmlAVFrame> frame)
@@ -81,65 +141,46 @@ void QmlAVPlayer::frameHandler(const std::shared_ptr<QmlAVFrame> frame)
             auto vf = std::static_pointer_cast<QmlAVVideoFrame>(frame);
             QVideoFrame qvf = *vf;
 
-            if (m_videoSurface) {
-                if (!m_videoSurface->isActive()) {
-                    QVideoSurfaceFormat f(qvf.size(), qvf.pixelFormat(), qvf.handleType());
-
-                    AVRational sar = {1, 1};
-                    auto dar = QmlAVOptions(m_avOptions).aspectRatio();
-                    if (!dar.has_value()) {
-                        sar = vf->sampleAspectRatio();
-                    } else {
-                        // Just divide the DAR by the Frame size and reduce the fraction
-                        av_reduce(&sar.num, &sar.den,
-                                  dar->num * vf->height(),
-                                  dar->den * vf->width(),
-                                  1024 * 1024);
-                        logDebug() << "Force Aspect Ratio "
-                                  << vf->width() << "x" << vf->height()
-                                  << " [SAR " << sar.num << ":" << sar.den << " DAR " << dar->num << ":" << dar->den << "]";
-                    }
-                    f.setPixelAspectRatio(sar.num, sar.den);
-
-                    f.setYCbCrColorSpace(vf->colorSpace());
-                    logDebug() << "Starting with: "
-                               << "QVideoSurfaceFormat(" << f.pixelFormat() << ", " << f.frameSize()
-                               << ", viewport=" << f.viewport() << ", pixelAspectRatio=" << f.pixelAspectRatio()
-                               << ", handleType=" << f.handleType() <<  ", yCbCrColorSpace=" << f.yCbCrColorSpace()
+            if (!m_videoSinks.isEmpty() && qvf.isValid()) {
+                // Cache video format for debugging
+                if (!m_lastVideoFormat.isValid()) {
+                    m_lastVideoFormat = qvf.surfaceFormat();
+                    
+                    logDebug() << "Video format: "
+                               << "QVideoFrameFormat(" << m_lastVideoFormat.pixelFormat() 
+                               << ", " << m_lastVideoFormat.frameSize()
+                               << ", colorSpace=" << m_lastVideoFormat.colorSpace()
                                << ')';
-                    if (!m_videoSurface->start(f)) {
-                        logCritical() << "Error starting the video surface presenting frames.";
-                        return;
-                    }
-
+                    
                     setHasVideo(true);
                 }
 
-                if (m_videoSurface->isActive()) {
-                    if (!m_videoSurface->present(qvf)) {
-                        stop();
-                    } else {
-                        emit videoFramePresented();
+                // Qt6: Simply set the frame on all connected sinks
+                for (auto *sink : m_videoSinks) {
+                    if (sink) {
+                        sink->setVideoFrame(qvf);
                     }
                 }
+                
+                emit videoFramePresented();
             }
         } else if (frame->type() == QmlAVFrame::TypeAudio) {
             auto af = std::static_pointer_cast<QmlAVAudioFrame>(frame);
 
             m_audioIODevice.enqueue(af);
 
-            if (!m_audioOutput) {
+            if (!m_audioSink) {
                 if (af->audioFormat().isValid()) {
                     auto f = af->audioFormat();
-                    logDebug() << "Starting with: " << f;
-                    auto outputDevice = QAudioDeviceInfo::defaultOutputDevice();
-                    m_audioOutput = new QAudioOutput(outputDevice, f);
-                    m_audioOutput->setVolume(QAudio::convertVolume(m_volume,
-                                                                   QAudio::LogarithmicVolumeScale,
-                                                                   QAudio::LinearVolumeScale));
-                    // NOTE: When use start() with a internal pointer to QIODevice we have a bug https://bugreports.qt.io/browse/QTBUG-60575 "infinite loop"
-                    // at a volume other than 1.0f. In addition, the use of a buffer (as queue) improves sound quality.
-                    m_audioOutput->start(&m_audioIODevice);
+                    logDebug() << "Starting audio with: " << f;
+                    
+                    // Qt6: Use QMediaDevices and QAudioSink
+                    auto outputDevice = QMediaDevices::defaultAudioOutput();
+                    m_audioSink = new QAudioSink(outputDevice, f);
+                    m_audioSink->setVolume(QAudio::convertVolume(m_volume,
+                                                                 QAudio::LogarithmicVolumeScale,
+                                                                 QAudio::LinearVolumeScale));
+                    m_audioSink->start(&m_audioIODevice);
                     setHasAudio(true);
                 }
             }
@@ -213,10 +254,10 @@ void QmlAVPlayer::setVolume(QmlAVPropertyType<double> volume)
 
     m_volume = volume;
 
-    if (m_audioOutput) {
-        m_audioOutput->setVolume(QAudio::convertVolume(volume,
-                                                       QAudio::LogarithmicVolumeScale,
-                                                       QAudio::LinearVolumeScale));
+    if (m_audioSink) {
+        m_audioSink->setVolume(QAudio::convertVolume(volume,
+                                                     QAudio::LogarithmicVolumeScale,
+                                                     QAudio::LinearVolumeScale));
     }
 
     emit volumeChanged(volume);
@@ -281,7 +322,7 @@ void QmlAVPlayer::reset()
     }
 }
 
-void QmlAVPlayer::setPlaybackState(const QMediaPlayer::State state)
+void QmlAVPlayer::setPlaybackState(const QMediaPlayer::PlaybackState state)
 {
     if (m_playbackState == state) {
         return;

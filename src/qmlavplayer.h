@@ -3,10 +3,12 @@
 
 #include <QQmlParserStatus>
 #include <QMediaPlayer>
-#include <QAbstractVideoSurface>
-#include <QVideoSurfaceFormat>
-#include <QAudioOutput>
+#include <QVideoSink>
+#include <QVideoFrameFormat>
+#include <QAudioSink>
+#include <QMediaDevices>
 #include <QTimer>
+#include <QList>
 
 #include "qmlavframe.h"
 #include "qmlavdemuxer.h"
@@ -18,14 +20,20 @@ class QmlAVPlayer : public QObject, public QQmlParserStatus
     Q_OBJECT
     Q_INTERFACES(QQmlParserStatus)
 
-    Q_PROPERTY(QAbstractVideoSurface *videoSurface READ videoSurface WRITE setVideoSurface)
+    // Qt6: Use QVideoSink instead of QAbstractVideoSurface
+    Q_PROPERTY(QVideoSink *videoSink READ videoSink WRITE setVideoSink NOTIFY videoSinkChanged)
+    // Number of connected video sinks
+    Q_PROPERTY(int videoSinkCount READ videoSinkCount NOTIFY videoSinkCountChanged)
+    // When true, setVideoSink adds to the list instead of replacing
+    Q_PROPERTY(bool multiSinkMode READ multiSinkMode WRITE setMultiSinkMode NOTIFY multiSinkModeChanged)
 
     QMLAV_PROPERTY_DECL(QVariantMap, avOptions, setAVOptions, avOptionsChanged);
     QMLAV_PROPERTY_DECL(bool, autoLoad, setAutoLoad, autoLoadChanged) = true;
     QMLAV_PROPERTY_DECL(bool, autoPlay, setAutoPlay, autoPlayChanged) = false;
     QMLAV_PROPERTY(int, loops, setLoops, loopsChanged) = 1; // NOTE: Implemented partially (Once playing and infinite loop behavior)
     QMLAV_PROPERTY_DECL(QUrl, source, setSource, sourceChanged);
-    QMLAV_PROPERTY_READONLY(QMediaPlayer::State, playbackState, playbackStateChanged) = QMediaPlayer::StoppedState;
+    // Qt6: QMediaPlayer::State is now QMediaPlayer::PlaybackState
+    QMLAV_PROPERTY_READONLY(QMediaPlayer::PlaybackState, playbackState, playbackStateChanged) = QMediaPlayer::StoppedState;
     QMLAV_PROPERTY_READONLY(QMediaPlayer::MediaStatus, status, statusChanged) = QMediaPlayer::NoMedia;
     QMLAV_PROPERTY_READONLY(QVariant, bufferProgress, bufferProgressChanged) = 1.0; // TODO:
     QMLAV_PROPERTY(bool, muted, setMuted, mutedChanged) = false; // TODO:
@@ -37,17 +45,29 @@ public:
     QmlAVPlayer(QObject *parent = nullptr);
     ~QmlAVPlayer() override;
 
-    QAbstractVideoSurface *videoSurface() const { return m_videoSurface; }
+    // Returns first sink or nullptr
+    QVideoSink *videoSink() const { return m_videoSinks.isEmpty() ? nullptr : m_videoSinks.first(); }
+    int videoSinkCount() const { return m_videoSinks.count(); }
+    bool multiSinkMode() const { return m_multiSinkMode; }
+    void setMultiSinkMode(bool mode);
+    
     virtual void classBegin() override {}
     virtual void componentComplete() override;
 
+    // Multi-sink support - add/remove sinks without stopping playback
+    Q_INVOKABLE void addVideoSink(QVideoSink *sink);
+    Q_INVOKABLE void removeVideoSink(QVideoSink *sink);
+
 signals:
     void videoFramePresented();
+    void videoSinkChanged();
+    void videoSinkCountChanged();
+    void multiSinkModeChanged();
 
 public slots:
     void play();
     void stop();
-    void setVideoSurface(QAbstractVideoSurface *surface);
+    void setVideoSink(QVideoSink *sink);
     void frameHandler(const std::shared_ptr<QmlAVFrame> frame);
 
 protected:
@@ -55,19 +75,21 @@ protected:
     void stateMachine();
     void reset();
 
-    void setPlaybackState(const QMediaPlayer::State state);
+    void setPlaybackState(const QMediaPlayer::PlaybackState state);
     void setStatus(const QMediaPlayer::MediaStatus status);
     void setHasVideo(bool hasVideo);
     void setHasAudio(bool hasAudio);
 
 private:
     bool m_complete;
+    bool m_multiSinkMode;
     QmlAVDemuxer *m_demuxer;
-    QAbstractVideoSurface *m_videoSurface;
+    QList<QVideoSink*> m_videoSinks;
+    QVideoFrameFormat m_lastVideoFormat;  // Cache format for late-joining sinks
     QTimer m_playTimer;
 
     QmlAVAudioIODevice m_audioIODevice;
-    QAudioOutput *m_audioOutput;
+    QAudioSink *m_audioSink;
 };
 
 #endif // QMLAVPLAYER_H

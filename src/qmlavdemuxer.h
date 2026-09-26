@@ -7,8 +7,8 @@ extern "C" {
 
 #include <QVideoFrame>
 #include <QMediaPlayer>
-#include <QVideoSurfaceFormat>
-#include <QAudioOutput>
+#include <QVideoFrameFormat>
+#include <QAudioSink>
 
 #include "qmlavmediacontextholder.h"
 #include "qmlavoptions.h"
@@ -63,7 +63,7 @@ public:
     QVariantMap stat() const;
 
 signals:
-    void playbackStateChanged(QMediaPlayer::State state);
+    void playbackStateChanged(QMediaPlayer::PlaybackState state);
     void mediaStatusChanged(QMediaPlayer::MediaStatus status);
     void frameFinished(const std::shared_ptr<QmlAVFrame> frame);
 

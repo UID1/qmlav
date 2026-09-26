@@ -6,21 +6,21 @@ extern "C" {
 }
 
 #include <QVideoFrame>
-#include <QVideoSurfaceFormat>
-#include <QAudioOutput>
+#include <QVideoFrameFormat>
+#include <QAudioFormat>
 
 class QmlAVPixelFormat
 {
     struct PixelFormatMap {
         AVPixelFormat avFormat;
-        QVideoFrame::PixelFormat format;
+        QVideoFrameFormat::PixelFormat format;
         bool qtNative = false;
     };
 
 public:
     QmlAVPixelFormat(AVPixelFormat avPixelFormat = AV_PIX_FMT_NONE);
     QmlAVPixelFormat(int avPixelFormat);
-    QmlAVPixelFormat(QVideoFrame::PixelFormat pixelFormat);
+    QmlAVPixelFormat(QVideoFrameFormat::PixelFormat pixelFormat);
 
     bool isValid() const { return m_avPixelFormat != AV_PIX_FMT_NONE; }
     bool isHWAccel() const;
@@ -29,14 +29,14 @@ public:
 
     operator int() const { return m_avPixelFormat; }
     operator AVPixelFormat() const { return m_avPixelFormat; }
-    operator QVideoFrame::PixelFormat() const { return pixelFormatFromAVFormat(m_avPixelFormat); }
+    operator QVideoFrameFormat::PixelFormat() const { return pixelFormatFromAVFormat(m_avPixelFormat); }
     bool operator==(const QmlAVPixelFormat &other) const { return m_avPixelFormat == other.m_avPixelFormat; }
     bool operator!=(const QmlAVPixelFormat &other) const { return m_avPixelFormat != other.m_avPixelFormat; }
 
 protected:
     AVPixelFormat normalize(AVPixelFormat avPixelFormat) const;
-    QVideoFrame::PixelFormat pixelFormatFromAVFormat(AVPixelFormat avPixelFormat) const;
-    AVPixelFormat avFormatFromPixelFormat(QVideoFrame::PixelFormat pixelFormat) const;
+    QVideoFrameFormat::PixelFormat pixelFormatFromAVFormat(AVPixelFormat avPixelFormat) const;
+    AVPixelFormat avFormatFromPixelFormat(QVideoFrameFormat::PixelFormat pixelFormat) const;
 
 private:
     static const std::vector<QmlAVPixelFormat::PixelFormatMap> m_pixelFormatMap;
@@ -49,7 +49,7 @@ public:
     QmlAVColorSpace(AVColorSpace avColorSpace = AVCOL_SPC_UNSPECIFIED);
 
     operator AVColorSpace() const { return m_avColorSpace; }
-    operator QVideoSurfaceFormat::YCbCrColorSpace() const;
+    operator QVideoFrameFormat::ColorSpace() const;
 
 private:
     AVColorSpace m_avColorSpace;
@@ -57,7 +57,7 @@ private:
 
 namespace QmlAVSampleFormat
 {
-QAudioFormat::SampleType audioFormatFromAVFormat(AVSampleFormat sampleFormat);
+    QAudioFormat::SampleFormat audioFormatFromAVFormat(AVSampleFormat sampleFormat);
 }
 
 #ifndef QT_NO_DEBUG_STREAM
