@@ -1,6 +1,7 @@
 #include "qmlavhwoutput_vaapi_egl.h"
 
 #if defined(__linux__) && !defined(__ANDROID__)
+#include <QVariant>
 #include "qmlavutils.h"
 
 #include <cstdint>
