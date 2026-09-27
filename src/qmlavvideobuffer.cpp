@@ -61,24 +61,27 @@ AVFramePtr QmlAVVideoFrameFactory::swsScale(const QmlAVVideoFrame &videoFrame, A
 {
     AVFramePtr avFrameSws;
     AVPixelFormat srcFormat = static_cast<AVPixelFormat>(videoFrame.avFrame()->format);
-    
-    SwsContext *swsCtx = sws_getContext(
-        videoFrame.avFrame()->width, videoFrame.avFrame()->height, srcFormat,
-        videoFrame.avFrame()->width, videoFrame.avFrame()->height, dstFormat,
-        SWS_BILINEAR, nullptr, nullptr, nullptr);
-    
-    if (swsCtx) {
-        avFrameSws->width = videoFrame.avFrame()->width;
-        avFrameSws->height = videoFrame.avFrame()->height;
+    const int width = videoFrame.avFrame()->width;
+    const int height = videoFrame.avFrame()->height;
+
+    // Reuse the last scaler when size/format stay the same (typical live streams).
+    thread_local SwsContext *tlsSws = nullptr;
+    tlsSws = sws_getCachedContext(tlsSws,
+                                  width, height, srcFormat,
+                                  width, height, dstFormat,
+                                  SWS_BILINEAR, nullptr, nullptr, nullptr);
+
+    if (tlsSws) {
+        avFrameSws->width = width;
+        avFrameSws->height = height;
         avFrameSws->format = dstFormat;
         av_frame_get_buffer(avFrameSws, FFMPEG_ALIGNMENT);
-        
-        sws_scale(swsCtx, videoFrame.avFrame()->data, videoFrame.avFrame()->linesize, 
-                  0, videoFrame.avFrame()->height, 
+
+        sws_scale(tlsSws, videoFrame.avFrame()->data, videoFrame.avFrame()->linesize,
+                  0, height,
                   avFrameSws->data, avFrameSws->linesize);
-        sws_freeContext(swsCtx);
     }
-    
+
     return avFrameSws;
 }
 
@@ -102,12 +105,18 @@ AVFramePtr QmlAVVideoFrameFactory::transferFromGPU(const QmlAVVideoFrame &videoF
     return AVFramePtr(); // Return empty if not HW or failed
 }
 
-void QmlAVVideoFrameFactory::copyPlaneData(QVideoFrame &frame, const AVFrame *avFrame, 
+bool QmlAVVideoFrameFactory::canReuseFrame(const QVideoFrame &frame, const QVideoFrameFormat &format)
+{
+    return frame.isValid()
+            && frame.size() == format.frameSize()
+            && frame.pixelFormat() == format.pixelFormat();
+}
+
+bool QmlAVVideoFrameFactory::copyPlaneData(QVideoFrame &frame, const AVFrame *avFrame, 
                                             const QVideoFrameFormat::PixelFormat &format)
 {
     if (!frame.map(QVideoFrame::WriteOnly)) {
-        qCritical() << "Failed to map QVideoFrame for writing";
-        return;
+        return false;
     }
     
     int planeCount = frame.planeCount();
@@ -145,11 +154,15 @@ void QmlAVVideoFrameFactory::copyPlaneData(QVideoFrame &frame, const AVFrame *av
     }
     
     frame.unmap();
+    return true;
 }
 
 QVideoFrame QmlAVVideoFrameFactory::createFrame(const QmlAVVideoFrame &avVideoFrame, 
-                                                 std::shared_ptr<QmlAVHWOutput> hwOutput)
+                                                 std::shared_ptr<QmlAVHWOutput> hwOutput,
+                                                 QVideoFrame *recycle)
 {
+    Q_UNUSED(hwOutput);
+
     const AVFrame *srcFrame = avVideoFrame.avFrame().get();
     AVFramePtr convertedFrame;
     
@@ -200,14 +213,33 @@ QVideoFrame QmlAVVideoFrameFactory::createFrame(const QmlAVVideoFrame &avVideoFr
         }
     }
     
-    // Create Qt6 video frame
     QVideoFrameFormat frameFormat(QSize(srcFrame->width, srcFrame->height), qtFormat);
-    QVideoFrame frame(frameFormat);
-    
-    // Copy pixel data
-    copyPlaneData(frame, srcFrame, qtFormat);
-    
-    return frame;
+
+    // Fill an existing CPU frame when size/format match so we do not
+    // QVideoFrame(format) + QByteArray::resize on every picture.
+    QVideoFrame allocated;
+    QVideoFrame *target = nullptr;
+    if (recycle && canReuseFrame(*recycle, frameFormat)) {
+        target = recycle;
+    } else {
+        allocated = QVideoFrame(frameFormat);
+        target = &allocated;
+    }
+
+    if (!copyPlaneData(*target, srcFrame, qtFormat)) {
+        allocated = QVideoFrame(frameFormat);
+        target = &allocated;
+        if (!copyPlaneData(*target, srcFrame, qtFormat)) {
+            qCritical() << "Failed to map QVideoFrame for writing";
+            return QVideoFrame();
+        }
+    }
+
+    if (recycle) {
+        *recycle = *target;
+    }
+
+    return *target;
 }
 
 // Legacy compatibility implementations

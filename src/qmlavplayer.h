@@ -4,6 +4,7 @@
 #include <QQmlParserStatus>
 #include <QMediaPlayer>
 #include <QVideoSink>
+#include <QVideoFrame>
 #include <QVideoFrameFormat>
 #include <QAudioSink>
 #include <QMediaDevices>
@@ -86,6 +87,8 @@ private:
     QmlAVDemuxer *m_demuxer;
     QList<QVideoSink*> m_videoSinks;
     QVideoFrameFormat m_lastVideoFormat;  // Cache format for late-joining sinks
+    QVideoFrame m_presentFrames[3];       // Triple-buffer reuse so RHI can still hold the last presented frame
+    int m_presentIndex;
     QTimer m_playTimer;
 
     QmlAVAudioIODevice m_audioIODevice;

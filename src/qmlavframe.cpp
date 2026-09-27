@@ -127,20 +127,20 @@ QmlAVColorSpace QmlAVVideoFrame::colorSpace() const
     return avFrame()->colorspace;
 }
 
-QmlAVVideoFrame::operator QVideoFrame() const
+QVideoFrame QmlAVVideoFrame::toQVideoFrame(QVideoFrame *recycle) const
 {
-    if (isValid())  {
-        // Qt6: Use the factory to create QVideoFrame directly
-        if (isHWDecoded()) {
-            QmlAVVideoBuffer_GPU buffer(*this, decoder<QmlAVVideoDecoder>()->hwOutput());
-            return buffer.toVideoFrame();
-        } else {
-            QmlAVVideoBuffer_CPU buffer(*this);
-            return buffer.toVideoFrame();
-        }
-    } else {
+    if (!isValid()) {
         return QVideoFrame();
     }
+
+    std::shared_ptr<QmlAVHWOutput> hwOutput;
+    if (isHWDecoded()) {
+        if (auto *dec = decoder<QmlAVVideoDecoder>()) {
+            hwOutput = dec->hwOutput();
+        }
+    }
+
+    return QmlAVVideoFrameFactory::createFrame(*this, hwOutput, recycle);
 }
 
 QmlAVAudioFrame::QmlAVAudioFrame(const AVFramePtr &avFrame, const std::shared_ptr<QmlAVMediaContextHolder> &context)

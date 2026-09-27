@@ -14,11 +14,17 @@ struct SwsContext;
 class QmlAVVideoFrameFactory
 {
 public:
-    static QVideoFrame createFrame(const QmlAVVideoFrame &avVideoFrame, std::shared_ptr<QmlAVHWOutput> hwOutput = nullptr);
+    // recycle: when size/format match, fill that QVideoFrame instead of allocating.
+    // Callers that present to a sink should rotate several frames so the
+    // recycled one is not still held by QVideoSink / RHI.
+    static QVideoFrame createFrame(const QmlAVVideoFrame &avVideoFrame,
+                                   std::shared_ptr<QmlAVHWOutput> hwOutput = nullptr,
+                                   QVideoFrame *recycle = nullptr);
     
 private:
     static QVideoFrameFormat::PixelFormat mapPixelFormat(const QmlAVPixelFormat &avFormat);
-    static void copyPlaneData(QVideoFrame &frame, const AVFrame *avFrame, const QVideoFrameFormat::PixelFormat &format);
+    static bool copyPlaneData(QVideoFrame &frame, const AVFrame *avFrame, const QVideoFrameFormat::PixelFormat &format);
+    static bool canReuseFrame(const QVideoFrame &frame, const QVideoFrameFormat &format);
     static AVFramePtr swsScale(const QmlAVVideoFrame &videoFrame, AVPixelFormat dstFormat);
     static AVFramePtr transferFromGPU(const QmlAVVideoFrame &videoFrame);
 };

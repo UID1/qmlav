@@ -75,7 +75,8 @@ public:
     QmlAVPixelFormat swPixelFormat() const;
     QmlAVColorSpace colorSpace() const;
 
-    operator QVideoFrame() const;
+    operator QVideoFrame() const { return toQVideoFrame(); }
+    QVideoFrame toQVideoFrame(QVideoFrame *recycle = nullptr) const;
 };
 
 class QmlAVAudioFrame final : public QmlAVFrame

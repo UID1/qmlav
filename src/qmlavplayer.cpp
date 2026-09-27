@@ -5,6 +5,7 @@ QmlAVPlayer::QmlAVPlayer(QObject *parent)
     , m_complete(false)
     , m_multiSinkMode(false)
     , m_demuxer(nullptr)
+    , m_presentIndex(0)
     , m_audioSink(nullptr)
 {
     m_playTimer.setSingleShot(true);
@@ -46,9 +47,16 @@ void QmlAVPlayer::stop()
         m_demuxer = nullptr;
     }
 
-    // Qt6: No need to stop sinks, just clear the list
+    for (auto *sink : m_videoSinks) {
+        if (sink)
+            sink->setVideoFrame(QVideoFrame());
+    }
     m_videoSinks.clear();
-    m_lastVideoFormat = QVideoFrameFormat();  // Clear cached format
+    m_lastVideoFormat = QVideoFrameFormat();
+    m_presentFrames[0] = QVideoFrame();
+    m_presentFrames[1] = QVideoFrame();
+    m_presentFrames[2] = QVideoFrame();
+    m_presentIndex = 0;
 
     if (m_audioSink) {
         m_audioSink->stop();
@@ -66,8 +74,8 @@ void QmlAVPlayer::stop()
 void QmlAVPlayer::setVideoSink(QVideoSink *sink)
 {
     if (m_multiSinkMode) {
-        // In multi-sink mode, setVideoSink adds to the list
-        addVideoSink(sink);
+        if (sink)
+            addVideoSink(sink);
         return;
     }
     
@@ -129,7 +137,8 @@ void QmlAVPlayer::removeVideoSink(QVideoSink *sink)
     }
     
     logDebug() << "removeVideoSink() - removing sink, total will be:" << (m_videoSinks.count() - 1);
-    
+
+    disconnect(sink, &QObject::destroyed, this, nullptr);
     m_videoSinks.removeAt(index);
     emit videoSinkCountChanged();
 }
@@ -139,7 +148,8 @@ void QmlAVPlayer::frameHandler(const std::shared_ptr<QmlAVFrame> frame)
     if (m_playbackState == QMediaPlayer::PlayingState) {
         if (frame->type() == QmlAVFrame::TypeVideo) {
             auto vf = std::static_pointer_cast<QmlAVVideoFrame>(frame);
-            QVideoFrame qvf = *vf;
+            QVideoFrame qvf = vf->toQVideoFrame(&m_presentFrames[m_presentIndex]);
+            m_presentIndex = (m_presentIndex + 1) % 3;
 
             if (!m_videoSinks.isEmpty() && qvf.isValid()) {
                 // Cache video format for debugging
