@@ -192,6 +192,11 @@ bool QmlAVVideoDecoder::initVideoDecoder(const QmlAVOptions &avOptions)
 
     m_avCodecCtx->get_format = negotiatePixelFormatCb;
 
+    // Frame threading keeps extra DPB pictures in av_buffer_pool (heaptrack: 72
+    // live get_buffer2 buffers / ~17 MB). Slice threads share one DPB.
+    m_avCodecCtx->thread_count = 2;
+    m_avCodecCtx->thread_type = FF_THREAD_SLICE;
+
     AVHWDeviceType avHWDeviceType = avOptions.avHWDeviceType();
     if (avHWDeviceType != AV_HWDEVICE_TYPE_NONE) {
         AVDictionaryPtr opts;

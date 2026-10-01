@@ -215,8 +215,8 @@ QVideoFrame QmlAVVideoFrameFactory::createFrame(const QmlAVVideoFrame &avVideoFr
     
     QVideoFrameFormat frameFormat(QSize(srcFrame->width, srcFrame->height), qtFormat);
 
-    // Fill an existing CPU frame when size/format match so we do not
-    // QVideoFrame(format) + QByteArray::resize on every picture.
+    // Fill an existing CPU frame when size/format match and RHI/sinks are not
+    // still mapping it. Otherwise QVideoFrame(format) + QByteArray::resize.
     QVideoFrame allocated;
     QVideoFrame *target = nullptr;
     if (recycle && canReuseFrame(*recycle, frameFormat)) {
@@ -235,9 +235,8 @@ QVideoFrame QmlAVVideoFrameFactory::createFrame(const QmlAVVideoFrame &avVideoFr
         }
     }
 
-    if (recycle) {
+    if (recycle && target != recycle)
         *recycle = *target;
-    }
 
     return *target;
 }

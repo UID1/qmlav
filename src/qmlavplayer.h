@@ -58,6 +58,8 @@ public:
     // Multi-sink support - add/remove sinks without stopping playback
     Q_INVOKABLE void addVideoSink(QVideoSink *sink);
     Q_INVOKABLE void removeVideoSink(QVideoSink *sink);
+    // Tear down the demuxer and play again without dropping attached sinks.
+    Q_INVOKABLE void restartPlayback();
 
 signals:
     void videoFramePresented();
@@ -75,6 +77,7 @@ protected:
     bool load();
     void stateMachine();
     void reset();
+    void stopPlayback(bool clearVideoSinks);
 
     void setPlaybackState(const QMediaPlayer::PlaybackState state);
     void setStatus(const QMediaPlayer::MediaStatus status);
@@ -87,12 +90,17 @@ private:
     QmlAVDemuxer *m_demuxer;
     QList<QVideoSink*> m_videoSinks;
     QVideoFrameFormat m_lastVideoFormat;  // Cache format for late-joining sinks
-    QVideoFrame m_presentFrames[3];       // Triple-buffer reuse so RHI can still hold the last presented frame
+    static constexpr int PresentFrameSlots = 8;
+    QVideoFrame m_presentFrames[PresentFrameSlots];
     int m_presentIndex;
+
+    int pickWritablePresentSlot();
     QTimer m_playTimer;
 
     QmlAVAudioIODevice m_audioIODevice;
     QAudioSink *m_audioSink;
+    bool m_audioOutputChecked = false;
+    bool m_audioOutputAvailable = false;
 };
 
 #endif // QMLAVPLAYER_H
