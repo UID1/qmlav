@@ -41,6 +41,8 @@ class QmlAVPlayer : public QObject, public QQmlParserStatus
     QMLAV_PROPERTY_DECL(double, volume, setVolume, volumeChanged) = 0.0;
     QMLAV_PROPERTY_READONLY(bool, hasVideo, hasVideoChanged) = false;
     QMLAV_PROPERTY_READONLY(bool, hasAudio, hasAudioChanged) = false;
+    // coded size times sample aspect ratio. 0 until the first video frame.
+    QMLAV_PROPERTY_READONLY(double, displayAspect, displayAspectChanged) = 0.0;
 
 public:
     QmlAVPlayer(QObject *parent = nullptr);

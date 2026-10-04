@@ -179,6 +179,14 @@ void QmlAVPlayer::frameHandler(const std::shared_ptr<QmlAVFrame> frame)
     if (m_playbackState == QMediaPlayer::PlayingState) {
         if (frame->type() == QmlAVFrame::TypeVideo) {
             auto vf = std::static_pointer_cast<QmlAVVideoFrame>(frame);
+            const AVRational sar = vf->sampleAspectRatio();
+            if (vf->width() > 0 && vf->height() > 0 && sar.num > 0 && sar.den > 0) {
+                const double aspect = (double(vf->width()) * sar.num) / (double(vf->height()) * sar.den);
+                if (qAbs(m_displayAspect - aspect) > 0.0001) {
+                    m_displayAspect = aspect;
+                    emit displayAspectChanged(aspect);
+                }
+            }
             const int slot = pickWritablePresentSlot();
             QVideoFrame qvf = vf->toQVideoFrame(&m_presentFrames[slot]);
             m_presentIndex = (slot + 1) % PresentFrameSlots;
@@ -294,6 +302,10 @@ void QmlAVPlayer::setSource(QmlAVPropertyType<QUrl> source)
     logDebug() << QString("setSource(source=%1)").arg(source.toDisplayString());
 
     m_source = source;
+    if (!qFuzzyIsNull(m_displayAspect)) {
+        m_displayAspect = 0.0;
+        emit displayAspectChanged(0.0);
+    }
 
     reset();
 
